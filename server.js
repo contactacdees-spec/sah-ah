@@ -542,7 +542,7 @@ const server = http.createServer(async (req, res) => {
       if (c.status === 'pending' && Date.now() > c.expiresAt) c.status = 'expired';
       return sendJSON(res, 200, {
         ok: true, status: c.status, empNom: c.empNom,
-        record: c.record, error: c.error,
+        record: c.record, error: c.error, estAnomalie: c.estAnomalie,
         remaining: Math.max(0, Math.round((c.expiresAt - Date.now()) / 1000))
       });
     }
