@@ -212,6 +212,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+<!-- AUJOURD'HUI (présences / retards du jour, séparés du cumul) -->
+<div id="p-today" class="panel">
+  <div style="font-weight:800;font-size:17px;margin-bottom:12px;" id="today-ttl">Aujourd'hui</div>
+  <div class="sec-h">✅ Présences du jour (à l'heure)</div>
+  <div class="card" id="today-presence-list" style="margin-bottom:6px;"></div>
+  <div class="sec-h">⏱ Retards du jour</div>
+  <div class="card" id="today-retard-list" style="margin-bottom:6px;"></div>
+  <div class="sec-h">🚪 Départs anticipés du jour</div>
+  <div class="card" id="today-depart-list"></div>
+</div>
+
 <!-- SAISIE -->
 <div id="p-saisie" class="panel">
   <!-- TABS -->
@@ -388,6 +399,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- BOTTOM NAV -->
 <div class="bnav">
   <button class="bn on" id="nb-dash" onclick="show('dash')"><span class="ico">📊</span><span class="lbl">Bord</span></button>
+  <button class="bn" id="nb-today" onclick="show('today')"><span class="ico">📅</span><span class="lbl">Aujourd'hui</span></button>
   <button class="bn" id="nb-saisie" onclick="show('saisie')"><span class="ico">✏️</span><span class="lbl">Saisie</span></button>
   <button class="bn" id="nb-ret" onclick="show('ret')"><span class="ico">⏱</span><span class="lbl">Retards</span><span class="bn-cnt" id="c-ret">0</span></button>
   <button class="bn" id="nb-abs" onclick="show('abs')"><span class="ico">📋</span><span class="lbl">Absences</span><span class="bn-cnt" id="c-abs">0</span></button>
@@ -626,6 +638,7 @@ function show(name){
   document.getElementById('p-'+name).classList.add('on');
   document.getElementById('nb-'+name).classList.add('on');
   if(name==='dash')renderDash();
+  else if(name==='today')renderToday();
   else if(name==='ret')renderRet();
   else if(name==='abs')renderAbs();
   else if(name==='ann')renderAnn();
@@ -768,7 +781,7 @@ function del(tp,id){
 
 // LAST ENTRIES
 function renderLast(){
-  const all=[...DB.retards.map(r=>({...r,tp:'R'})),...DB.absences.map(a=>({...a,tp:'A'}))].sort((a,b)=>b.ts-a.ts).slice(0,15);
+  const all=[...DB.retards.filter(r=>r.totalMn>0).map(r=>({...r,tp:'R'})),...DB.absences.map(a=>({...a,tp:'A'}))].sort((a,b)=>b.ts-a.ts).slice(0,15);
   const el=document.getElementById('last-list');
   if(!all.length){el.innerHTML='<div class="empty"><div class="eico">📝</div><p>Aucune saisie pour le moment</p></div>';return;}
   el.innerHTML=all.map(e=>{
@@ -781,12 +794,30 @@ function renderLast(){
   }).join('');
 }
 
+// AUJOURD'HUI — présences et retards du jour, strictement séparés (jamais mélangés
+// avec le cumul historique de l'onglet "Retards", ni entre eux)
+function renderToday(){
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('today-ttl').textContent='Aujourd\'hui — '+today;
+  const todays=DB.retards.filter(r=>r.date===today);
+  const presences=todays.filter(r=>(r.type||'arrivee')==='arrivee' && !(r.totalMn>0));
+  const retards=todays.filter(r=>(r.type||'arrivee')==='arrivee' && r.totalMn>0);
+  const departs=todays.filter(r=>r.type==='depart');
+
+  const rowPresence=r=>`<div class="list-item">${av(r.empNom)}<div class="li-body"><div class="li-name">${r.empNom}</div><div class="li-sub">Arrivée à ${r.harr||'?'} • prévue ${r.hprev||'—'}</div></div><div class="li-right"><div class="li-val" style="color:var(--GRN);">✅ À l'heure</div></div></div>`;
+  const rowAnomalie=(r,ico)=>{const justifie=r.justifie==='Oui';return `<div class="list-item">${av(r.empNom)}<div class="li-body"><div class="li-name">${r.empNom}</div><div class="li-sub">${ico} ${r.hprev||'—'} → ${r.harr||'?'} • <span class="badge ${justifie?'bg':'br'}">${justifie?'✓ Just.':'✗ N.J.'}</span></div>${r.motif?`<div style="font-size:11px;color:var(--G4);margin-top:2px;">${r.motif}</div>`:''}</div><div class="li-right"><div class="li-val li-val-o">${fmt(r.totalMn)}</div></div></div>`;};
+
+  document.getElementById('today-presence-list').innerHTML=presences.length?presences.map(rowPresence).join(''):'<div class="empty" style="padding:20px;"><p>Aucune présence à l\'heure enregistrée pour l\'instant</p></div>';
+  document.getElementById('today-retard-list').innerHTML=retards.length?retards.map(r=>rowAnomalie(r,'⏱')).join(''):'<div class="empty" style="padding:20px;"><p>Aucun retard aujourd\'hui</p></div>';
+  document.getElementById('today-depart-list').innerHTML=departs.length?departs.map(r=>rowAnomalie(r,'🚪')).join(''):'<div class="empty" style="padding:20px;"><p>Aucun départ anticipé aujourd\'hui</p></div>';
+}
+
 // DASHBOARD
 function renderDash(){
   const m=document.getElementById('dash-m').value;
   const yr2=yr();
   document.getElementById('dash-ttl').textContent='Bord '+yr2+(m?' — '+MOIS[+m]:'');
-  let rets=fyear(DB.retards);let abs=fyear(DB.absences,'dateDebut');
+  let rets=fyear(DB.retards).filter(r=>r.totalMn>0);let abs=fyear(DB.absences,'dateDebut');
   if(m){rets=fmon(rets,m);abs=fmon(abs,m,'dateDebut');}
   const totR=rets.reduce((s,r)=>s+r.totalMn,0);
   const totA=abs.reduce((s,a)=>s+a.jours,0);
@@ -820,7 +851,7 @@ function renderRet(){
   const q=document.getElementById('s-ret').value.toLowerCase();
   const tp=document.getElementById('f-ret-tp').value;
   const jf=document.getElementById('f-ret-j').value;
-  let d=fyear(DB.retards);
+  let d=fyear(DB.retards).filter(r=>r.totalMn>0); // cumul des VRAIS retards/départs anticipés uniquement — les arrivées à l'heure ne polluent plus cette liste
   if(m)d=fmon(d,m);
   if(tp)d=d.filter(r=>(r.type||'arrivee')===tp);
   if(jf)d=d.filter(r=>(r.justifie||'Non')===jf);
@@ -850,7 +881,7 @@ function renderAbs(){
 
 // ANNUEL
 function renderAnn(){
-  const rets=fyear(DB.retards);const abs=fyear(DB.absences,'dateDebut');
+  const rets=fyear(DB.retards).filter(r=>r.totalMn>0);const abs=fyear(DB.absences,'dateDebut');
   document.getElementById('ann-yr').textContent=yr();
   const months=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0'));
   document.getElementById('mgrid').innerHTML=months.map(m=>{
@@ -945,13 +976,13 @@ function closeOv(id){document.getElementById(id).classList.remove('on');}
 
 function updateCnts(){
   const y=yr();
-  document.getElementById('c-ret').textContent=DB.retards.filter(r=>r.date.startsWith(y)).length;
+  document.getElementById('c-ret').textContent=DB.retards.filter(r=>r.date.startsWith(y)&&r.totalMn>0).length;
   document.getElementById('c-abs').textContent=DB.absences.filter(a=>a.dateDebut.startsWith(y)).length;
 }
 
 function exportCSV(){
   const y=yr();let csv='Type,Employé,Date,Détail,Motif,Justifié\n';
-  DB.retards.filter(r=>r.date.startsWith(y)).forEach(r=>csv+=`${r.type==='depart'?'Départ anticipé':'Retard'},"${r.empNom}","${r.date}","${fmt(r.totalMn)}","${r.motif||''}","${r.justifie||'Non'}"\n`);
+  DB.retards.filter(r=>r.date.startsWith(y)&&r.totalMn>0).forEach(r=>csv+=`${r.type==='depart'?'Départ anticipé':'Retard'},"${r.empNom}","${r.date}","${fmt(r.totalMn)}","${r.motif||''}","${r.justifie||'Non'}"\n`);
   DB.absences.filter(a=>a.dateDebut.startsWith(y)).forEach(a=>csv+=`Absence,"${a.empNom}","${a.dateDebut}","${a.jours}j","${a.motif||''}","${a.justifie}"\n`);
   const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);
   const el=document.createElement('a');el.href=u;el.download='presences_'+y+'.csv';el.click();
